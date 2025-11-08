@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Full Simulation</title>
+    <link rel="stylesheet" href="https://pyscript.net/releases/2024.3.1/core.css" />
+    <script type="module" src="https://pyscript.net/releases/2024.3.1/core.js"></script>
+
+    <script type="py" src="https://pyscript.net/latest/plugins/matplotlib/matplotlib.py"></script>
+</head>
+<body>
+    <h1>Full Robotic Arm Simulation</h1>
+    <nav>
+        <a href="index.html">Home</a> |
+        <a href="simulation.html">Full Simulation</a> |
+        <a href="demo.html">Demonstration</a>
+    </nav>
+
+    <div id="control-panel">
+        <h3>Control Panel</h3>
+        <label>Left: <input type="range" id="slider-left" min="0" max="10" value="5" py-input="on_slider_change"></label><br>
+        <label>Bottom: <input type="range" id="slider-bottom" min="0" max="10" value="5" py-input="on_slider_change"></label><br>
+        <label>Right: <input type="range" id="slider-right" min="0" max="10" value="5" py-input="on_slider_change"></label><br>
+        <h3>Actions</h3>
+        <button py-click="run_animation">Run</button>
+        <button py-click="replay_animation">Replay</button>
+        <button py-click="reset_all">Reset</button>
+
+        <h3>Recording</h3>
+        <button py-click="start_record">Start Rec</button>
+        <button py-click="stop_record">Stop Rec</button>
+
+        <h3>File I/O</h3>
+        <label>Load CSV: <input type="file" id="file-input" accept=".csv" py-change="play_csv"></label><br>
+        <button py-click="save_csv">Save as CSV</button>
+    </div>
+
+    <div id="robot-plot"></div>
+    <div id="data-plot"></div>
+
+    <py-config>
+        packages = ["numpy", "matplotlib"]
+        [[fetch]]
+        files = ["./robot_logic.py"]
+    </py-config>
+
+    <py-script>
+        import numpy as np
+        import matplotlib.pyplot as plt
+        import csv
+        from pyscript import display, document
+        from pyodide.http import pyfetch
+        from js import Object, window # For file download
+        from io import StringIO # For saving CSV
+        
+        # Import your robot logic
+        from robot_logic import SimpleRobot, dh_transform
+        
+        # --- Globals and Setup ---
+        robot = SimpleRobot()
+        ee_positions, animation_data, recorded_data = [], [], []
+        recording = False
+
+        # --- Matplotlib Setup ---
+        # We create the figures and axes ONCE
+        fig_robot = plt.figure(1, figsize=(7, 4))
+        ax_robot = fig_robot.add_subplot(111, projection='3d')
+        ax_robot.set_title("Robot Space (3D View)")
+        ax_robot.set_xlim(-40, 40); ax_robot.set_ylim(-40, 40); ax_robot.set_zlim(-40, 40)
+        (line_robot,) = ax_robot.plot([], [], [], 'o-', lw=2)
+
+        fig_plot = plt.figure(2, figsize=(7, 2))
+        ax_plot = fig_plot.add_subplot(111)
+        ax_plot.set_title("Position Data (End-Effector)")
+        (line_x,) = ax_plot.plot([], [], label="X")
+        (line_y,) = ax_plot.plot([], [], label="Y")
+        (line_z,) = ax_plot.plot([], [], label="Z")
+        ax_plot.legend(loc="upper right")
+
+        # --- Helper Functions ---
+        def get_joint_angles():
+            q = []
+            q.append(float(document.getElementById("slider-left").value) / 5.0)
+            q.append(float(document.getElementById("slider-bottom").value) / 5.0)
+            q.append(float(document.getElementById("slider-right").value) / 5.0)
+            # ... get your other 4 slider values ...
+            
+            # For now, let's pretend we have all 7
+            q.extend([1.0] * 4) # Placeholder
+            return np.array(q)
+
+        def update_robot_display(q):
+            pts = robot.fk(q)
+            line_robot.set_data(pts[:,0], pts[:,1])
+            line_robot.set_3d_properties(pts[:,2])
+            ee_positions.append(pts[-1])
+            
+            # ... (your logic for line_x, line_y, line_z) ...
+            
+            # Display the plots in the HTML divs
+            display(fig_robot, target="robot-plot", append=False)
+            display(fig_plot, target="data-plot", append=False)
+            
+            if recording:
+                recorded_data.append(np.concatenate([q, pts[-1]]))
+
+        # --- Functions Linked to HTML (Event Handlers) ---
+        
+        # This function is called by the <input ... py-input="on_slider_change">
+        def on_slider_change(event):
+            q = get_joint_angles()
+            update_robot_display(q)
+
+        # This is called by <button py-click="run_animation">
+        def run_animation(event):
+            print("Running animation...")
+            # (Your animation logic from your .py file goes here)
+            # Note: animation.FuncAnimation is tricky. It's easier
+            # to use pyscript.clock.create_timer or asyncio.sleep
+            
+        def replay_animation(event):
+            print("Replaying animation...")
+            
+        def reset_all(event):
+            global ee_positions, animation_data, recorded_data
+            print("Resetting...")
+            ee_positions.clear(); animation_data.clear(); recorded_data.clear()
+            # (clear your plots)
+
+        def start_record(event):
+            global recording, recorded_data
+            recording = True
+            recorded_data = []
+            print("Recording started.")
+
+        def stop_record(event):
+            global recording
+            recording = False
+            print(f"Recording stopped. {len(recorded_data)} frames captured.")
+
+        # --- REPLACING TINTER ---
+        
+        # This is called by <button py-click="save_csv">
+        def save_csv(event):
+            if not recorded_data:
+                print("No recorded data to save.")
+                return
+            
+            # Create a CSV in memory
+            si = StringIO()
+            writer = csv.writer(si)
+            writer.writerow([f"Joint{i+1}" for i in range(7)] + ["X","Y","Z"])
+            writer.writerows(recorded_data)
+            
+            # Use JavaScript to trigger a download
+            file_content = si.getvalue()
+            blob = window.Blob.new([file_content], {type: "text/csv"})
+            url = window.URL.createObjectURL(blob)
+            
+            # Create a temporary 'a' tag to click
+            a = document.createElement("a")
+            a.href = url
+            a.download = "robot_data.csv"
+            document.body.appendChild(a)
+            a.click()
+            document.body.removeChild(a)
+            print("File saved.")
+
+        # This is called by <input type="file" py-change="play_csv">
+        async def play_csv(event):
+            file_list = event.target.files
+            if not file_list.length:
+                print("No file selected.")
+                return
+
+            # Get the first file
+            file = file_list.item(0)
+            print(f"Reading file: {file.name}")
+            
+            # Read the file text
+            file_text = await file.text()
+            
+            # Process the CSV text
+            f = StringIO(file_text)
+            reader = csv.reader(f)
+            next(reader) # skip header
+            data = np.array([[float(x) for x in row] for row in reader])
+            
+            # (Your animation logic using this 'data' goes here)
+            print(f"Playing {len(data)} frames from CSV.")
+
+        # --- Initial Run ---
+        print("Page loaded. Initializing robot.")
+        on_slider_change(None) # Draw the robot in its initial position
+    </py-script>
+</body>
+</html>

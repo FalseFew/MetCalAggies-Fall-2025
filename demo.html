@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Robot Demonstration</title>
+    <link rel="stylesheet" href="https://pyscript.net/releases/2024.3.1/core.css" />
+    <script type="module" src="https://pyscript.net/releases/2024.3.1/core.js"></script>
+
+    <script type="py" src="https://pyscript.net/latest/plugins/matplotlib/matplotlib.py"></script>
+</head>
+<body>
+    <h1>Robotic Arm Demonstration</h1>
+    <nav>
+        <a href="index.html">Home</a> |
+        <a href="simulation.html">Full Simulation</a> |
+        <a href="demo.html">Demonstration</a>
+    </nav>
+
+    <div id="demo-controls">
+        <button py-click="run_next_demo" id="demo-button">Run Next Demonstration</button>
+        <p>Current Demo: <span id="demo-status">Idle. Click the button to start.</span></p>
+    </div>
+
+    <div id="robot-plot-demo"></div>
+    <div id="data-plot-demo"></div>
+
+    <py-config>
+        packages = ["numpy", "matplotlib"]
+        [[fetch]]
+        files = ["./robot_logic.py"]
+    </py-config>
+
+    <py-script>
+        import numpy as np
+        import matplotlib.pyplot as plt
+        import asyncio  # We'll use this for web-friendly animations
+        from pyscript import display, document
+        
+        # Import your robot logic
+        from robot_logic import SimpleRobot
+        
+        # --- Globals and Setup ---
+        robot = SimpleRobot()
+        # We need a global state variable to cycle through the demos
+        current_demo_index = 0
+        
+        # --- Matplotlib Setup (Same as simulation.html) ---
+        fig_robot = plt.figure(1, figsize=(7, 4))
+        ax_robot = fig_robot.add_subplot(111, projection='3d')
+        ax_robot.set_title("Robot Space (3D View)")
+        ax_robot.set_xlim(-40, 40); ax_robot.set_ylim(-40, 40); ax_robot.set_zlim(-40, 40)
+        (line_robot,) = ax_robot.plot([], [], [], 'o-', lw=2)
+
+        fig_plot = plt.figure(2, figsize=(7, 2))
+        ax_plot = fig_plot.add_subplot(111)
+        ax_plot.set_title("Position Data (End-Effector)")
+        (line_x,) = ax_plot.plot([], [], label="X")
+        (line_y,) = ax_plot.plot([], [], label="Y")
+        (line_z,) = ax_plot.plot([], [], label="Z")
+        ax_plot.legend(loc="upper right")
+
+        # --- Helper Function to Update Plots ---
+        def update_robot_display(q, ee_history=None):
+            pts = robot.fk(q)
+            line_robot.set_data(pts[:,0], pts[:,1])
+            line_robot.set_3d_properties(pts[:,2])
+            
+            # Update the data plot if history is provided
+            if ee_history:
+                arr = np.array(ee_history)
+                line_x.set_data(range(len(arr)), arr[:,0])
+                line_y.set_data(range(len(arr)), arr[:,1])
+                line_z.set_data(range(len(arr)), arr[:,2])
+                ax_plot.relim(); ax_plot.autoscale_view()
+
+            # Display the plots in the HTML divs
+            display(fig_robot, target="robot-plot-demo", append=False)
+            display(fig_plot, target="data-plot-demo", append=False)
+
+        # --- DEMONSTRATION LOGIC ---
+        
+        # This is an "async" function, which lets it pause
+        # without freezing the browser.
+        async def demo_1_wave():
+            """Demo 1: Makes the last joint 'wave' back and forth."""
+            base_q = np.array([1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5])
+            ee_history = []
+            
+            # Animate over 100 frames
+            t = np.linspace(0, 4 * np.pi, 100)
+            for i in range(100):
+                # Copy the base pose and modify the last joint
+                q = base_q.copy()
+                q[6] = 1.5 + np.sin(t[i]) * 1.5
+                
+                # Get end-effector position and update history
+                ee_pos = robot.fk(q)[-1]
+                ee_history.append(ee_pos)
+                
+                # Update the drawing
+                update_robot_display(q, ee_history)
+                
+                # Pause for 50ms (0.05s) to create an animation
+                await asyncio.sleep(0.05)
+                
+        async def demo_2_reach():
+            """Demo 2: Makes the arm 'reach' out and back."""
+            ee_history = []
+            
+            # Animate over 100 frames
+            t = np.linspace(0, 2 * np.pi, 100)
+            for i in range(100):
+                # This makes the main joints open and close
+                val = 1.5 + np.sin(t
