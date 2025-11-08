@@ -110,4 +110,53 @@
             t = np.linspace(0, 2 * np.pi, 100)
             for i in range(100):
                 # This makes the main joints open and close
-                val = 1.5 + np.sin(t
+                val = 1.5 + np.sin(t[i]) * 0.5
+                q = np.array([val, val, val, val, val, val, val])
+                
+                ee_pos = robot.fk(q)[-1]
+                ee_history.append(ee_pos)
+                
+                update_robot_display(q, ee_history)
+                await asyncio.sleep(0.05)
+
+        # --- List of all Demos ---
+        # We store the demo *functions* in a list
+        all_demos = [
+            ("Waving", demo_1_wave),
+            ("Reaching", demo_2_reach),
+            # You can add more demo functions here
+            # ("Demo 3", demo_3_function),
+        ]
+
+        # --- Main Button Function ---
+        # This is the function called by the HTML button
+        async def run_next_demo(event):
+            global current_demo_index
+            
+            # 1. Get the next demo to run
+            demo_name, demo_function = all_demos[current_demo_index]
+            
+            # 2. Update status & disable button
+            status_element = document.getElementById("demo-status")
+            button_element = document.getElementById("demo-button")
+            status_element.innerText = f"Running: {demo_name}..."
+            button_element.disabled = True
+            
+            # 3. Run the animation (and "await" its completion)
+            await demo_function()
+            
+            # 4. Re-enable button and update status
+            status_element.innerText = "Idle. Click the button to start."
+            button_element.disabled = False
+            
+            # 5. Move to the next demo for the *next* click
+            current_demo_index = (current_demo_index + 1) % len(all_demos)
+
+        # --- Initial Run ---
+        # Draw the robot in its initial position when the page loads
+        print("Demo page loaded. Initializing robot.")
+        initial_q = np.array([1.5] * 7)
+        update_robot_display(initial_q)
+    </py-script>
+</body>
+</html>
